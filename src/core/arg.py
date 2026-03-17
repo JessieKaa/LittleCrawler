@@ -201,6 +201,23 @@ async def parse_cmd(argv: Optional[Sequence[str]] = None):
                 rich_help_panel="Storage Configuration",
             ),
         ] = None,
+        schedule: Annotated[
+            bool,
+            typer.Option(
+                "--schedule",
+                help="Enable scheduled crawl mode and rerun crawler by configured interval",
+                rich_help_panel="Runtime Configuration",
+                is_flag=True,
+            ),
+        ] = False,
+        schedule_skip_time_ranges: Annotated[
+            str,
+            typer.Option(
+                "--schedule_skip_time_ranges",
+                help='Time ranges where scheduled mode will not run, format: "HH:MM-HH:MM,HH:MM-HH:MM"',
+                rich_help_panel="Runtime Configuration",
+            ),
+        ] = config.SCHEDULE_SKIP_TIME_RANGES,
         cookies: Annotated[
             str,
             typer.Option(
@@ -249,6 +266,7 @@ async def parse_cmd(argv: Optional[Sequence[str]] = None):
         config.CDP_HEADLESS = enable_headless
         config.SAVE_DATA_OPTION = save_data_option.value
         config.COOKIES = cookies
+        config.SCHEDULE_SKIP_TIME_RANGES = schedule_skip_time_ranges
 
         # Set platform-specific ID lists for detail/creator mode
         if specified_id_list:
@@ -270,6 +288,8 @@ async def parse_cmd(argv: Optional[Sequence[str]] = None):
             headless=config.HEADLESS,
             save_data_option=config.SAVE_DATA_OPTION,
             init_db=init_db_value,
+            schedule=schedule,
+            schedule_skip_time_ranges=config.SCHEDULE_SKIP_TIME_RANGES,
             cookies=config.COOKIES,
             specified_id=specified_id,
             creator_id=creator_id,

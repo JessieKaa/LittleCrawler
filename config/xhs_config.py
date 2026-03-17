@@ -5,7 +5,7 @@
 
 # 搜索结果排序方式（枚举值见 src/platforms/xhs/field.py）
 # 可选: general(综合) | popularity_descending(最热) | time_descending(最新)
-SORT_TYPE = "popularity_descending"
+SORT_TYPE = "time_descending"
 
 # 指定笔记 URL 列表（detail 模式使用）
 # 注意: URL 必须携带 xsec_token 参数

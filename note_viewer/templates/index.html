@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>小红书笔记查看器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 20px; color: #333; }
+        .note-card { background: white; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .note-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .note-title { font-size: 18px; font-weight: bold; color: #333; }
+        .note-time { color: #999; font-size: 14px; }
+        .note-author { color: #666; font-size: 14px; margin-bottom: 8px; }
+        .note-desc { color: #666; line-height: 1.6; margin-bottom: 10px; }
+        .note-stats { display: flex; gap: 15px; color: #999; font-size: 14px; }
+        .note-link { color: #ff2442; text-decoration: none; }
+        .llm-filter { background: #fff3cd; padding: 12px; border-radius: 4px; margin-top: 10px; font-size: 14px; line-height: 1.8; }
+        .llm-filter div { margin: 4px 0; }
+        .llm-filter strong { color: #856404; margin-right: 8px; }
+        .loading { text-align: center; padding: 20px; color: #999; }
+        .filters { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
+        .filters label { display: flex; align-items: center; gap: 5px; font-size: 14px; color: #333; }
+        .filters input, .filters select { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .filters input[type="number"] { width: 100px; }
+        .filters input[type="date"] { width: 140px; }
+        .filters select { min-width: 120px; }
+        .filters button { padding: 8px 20px; background: #ff2442; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .filters button:hover { background: #e01e3a; }
+        .filters button.secondary { background: #6c757d; }
+        .filters button.secondary:hover { background: #5a6268; }
+        .pagination { background: white; padding: 15px; border-radius: 8px; margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px; }
+        .pagination button { padding: 8px 16px; background: #ff2442; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .pagination button:hover { background: #e01e3a; }
+        .pagination button:disabled { background: #ccc; cursor: not-allowed; }
+        .pagination span { color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>小红书笔记查看器</h1>
+        <div class="filters">
+            <label>置信度 ≥ <input type="number" id="minConfidence" step="0.1" min="0" max="100" placeholder="0-100"></label>
+            <label>价格 ≥ <input type="number" id="minPrice" step="1" min="0" placeholder="最低价"></label>
+            <label>价格 ≤ <input type="number" id="maxPrice" step="1" min="0" placeholder="最高价"></label>
+            <label>匹配等级
+                <select id="matchLevel">
+                    <option value="all">全部</option>
+                    <option value="值得一看">值得一看</option>
+                    <option value="稍微符合">稍微符合</option>
+                </select>
+            </label>
+            <label>来源类型
+                <select id="sourceType">
+                    <option value="all">全部</option>
+                    <option value="房东直租">房东直租</option>
+                    <option value="个人转租">个人转租</option>
+                    <option value="疑似中介/引流">疑似中介/引流</option>
+                </select>
+            </label>
+            <label>租房类型
+                <select id="noteType">
+                    <option value="all">全部</option>
+                    <option value="整租">整租</option>
+                    <option value="合租">合租</option>
+                </select>
+            </label>
+            <label>开始日期 <input type="date" id="startDate"></label>
+            <label>结束日期 <input type="date" id="endDate"></label>
+            <label>排序
+                <select id="sortBy">
+                    <option value="time">时间</option>
+                    <option value="liked_count">点赞数</option>
+                    <option value="collected_count">收藏数</option>
+                    <option value="comment_count">评论数</option>
+                </select>
+                <select id="sortOrder">
+                    <option value="desc">降序</option>
+                    <option value="asc">升序</option>
+                </select>
+            </label>
+            <button onclick="applyFilters()">筛选</button>
+            <button onclick="resetFilters()" class="secondary">重置</button>
+        </div>
+        <div id="notes"></div>
+        <div id="loading" class="loading">加载中...</div>
+        <div class="pagination" id="pagination" style="display: none;">
+            <button onclick="goToPage(1)" id="firstPage">首页</button>
+            <button onclick="goToPage(currentPage - 1)" id="prevPage">上一页</button>
+            <span id="pageInfo"></span>
+            <button onclick="goToPage(currentPage + 1)" id="nextPage">下一页</button>
+            <button onclick="goToPage(totalPages)" id="lastPage">末页</button>
+        </div>
+    </div>
+    <script>
+        let currentPage = 1;
+        let totalPages = 1;
+
+        function formatTime(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleString('zh-CN');
+        }
+
+        function loadNotes(page = 1) {
+            const params = new URLSearchParams();
+            const minConfidence = document.getElementById('minConfidence').value;
+            const minPrice = document.getElementById('minPrice').value;
+            const maxPrice = document.getElementById('maxPrice').value;
+            const matchLevel = document.getElementById('matchLevel').value;
+            const sourceType = document.getElementById('sourceType').value;
+            const noteType = document.getElementById('noteType').value;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const sortBy = document.getElementById('sortBy').value;
+            const sortOrder = document.getElementById('sortOrder').value;
+
+            if (minConfidence) params.append('min_confidence', minConfidence);
+            if (minPrice) params.append('min_price', minPrice);
+            if (maxPrice) params.append('max_price', maxPrice);
+            if (matchLevel && matchLevel !== 'all') params.append('match_level', matchLevel);
+            if (sourceType && sourceType !== 'all') params.append('source_type', sourceType);
+            if (noteType && noteType !== 'all') params.append('note_type', noteType);
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+            params.append('sort_by', sortBy);
+            params.append('sort_order', sortOrder);
+            params.append('page', page);
+            params.append('page_size', 20);
+
+            document.getElementById('loading').style.display = 'block';
+
+            fetch('/api/notes?' + params.toString())
+                .then(res => res.json())
+                .then(response => {
+                    const container = document.getElementById('notes');
+                    const loading = document.getElementById('loading');
+                    const pagination = document.getElementById('pagination');
+
+                    loading.style.display = 'none';
+
+                    const data = response.data || [];
+                    const paginationInfo = response.pagination || {};
+
+                    currentPage = paginationInfo.page || 1;
+                    totalPages = paginationInfo.total_pages || 1;
+
+                    if (data.length === 0) {
+                        container.innerHTML = '<div class="loading">暂无数据</div>';
+                        pagination.style.display = 'none';
+                        return;
+                    }
+
+                    container.innerHTML = data.map(note => {
+                        const llm = note.llm_filter || {};
+                        let filterInfo = '';
+
+                        if (Object.keys(llm).length > 0) {
+                            // 匹配等级样式
+                            const matchLevel = llm.match_level || '未知';
+                            const matchEmoji = matchLevel === '值得一看' ? '🔥' : '✨';
+                            const matchClass = matchLevel === '值得一看' ? 'color: #ff2442; font-weight: bold;' : 'color: #17a2b8;';
+
+                            // 可信度评分条
+                            const score = llm.confidence_score || 0;
+                            const filledBars = Math.floor(score / 20);
+                            const scoreBar = '🟢'.repeat(filledBars) + '⚪'.repeat(5 - filledBars);
+
+                            filterInfo = `
+                                <div class="llm-filter">
+                                    <div style="${matchClass}">${matchEmoji} 匹配等级: ${matchLevel}</div>
+                                    <div style="margin-top: 8px;">
+                                        <strong>可信度:</strong> ${scoreBar} ${score}/100
+                                    </div>
+                                    ${llm.type ? `<div><strong>类型:</strong> ${llm.type}</div>` : ''}
+                                    ${llm.price ? `<div><strong>租金:</strong> ${llm.price}</div>` : ''}
+                                    ${llm.location ? `<div><strong>位置:</strong> ${llm.location}</div>` : ''}
+                                    ${llm.transport ? `<div><strong>交通/水电:</strong> ${llm.transport}</div>` : ''}
+                                    ${llm.source_type ? `<div><strong>来源:</strong> ${llm.source_type}</div>` : ''}
+                                    ${llm.reason ? `<div style="margin-top: 8px;"><strong>分析:</strong> ${llm.reason}</div>` : ''}
+                                </div>
+                            `;
+                        }
+
+                        return `
+                            <div class="note-card">
+                                <div class="note-header">
+                                    <div class="note-title">${note.title || '无标题'}</div>
+                                    <div class="note-time">${formatTime(note.time)}</div>
+                                </div>
+                                <div class="note-author">作者: ${note.nickname || '未知'}</div>
+                                <div class="note-desc">${note.desc || ''}</div>
+                                <div class="note-stats">
+                                    <span>👍 ${note.liked_count || 0}</span>
+                                    <span>⭐ ${note.collected_count || 0}</span>
+                                    <span>💬 ${note.comment_count || 0}</span>
+                                    <a href="${note.note_url}" target="_blank" class="note-link">查看原文</a>
+                                </div>
+                                ${filterInfo}
+                            </div>
+                        `;
+                    }).join('');
+
+                    // 更新分页信息
+                    pagination.style.display = 'flex';
+                    document.getElementById('pageInfo').textContent =
+                        `第 ${currentPage} / ${totalPages} 页 (共 ${paginationInfo.total || 0} 条)`;
+                    document.getElementById('firstPage').disabled = currentPage === 1;
+                    document.getElementById('prevPage').disabled = currentPage === 1;
+                    document.getElementById('nextPage').disabled = currentPage === totalPages;
+                    document.getElementById('lastPage').disabled = currentPage === totalPages;
+                })
+                .catch(err => {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('notes').innerHTML = '<div class="loading">加载失败: ' + err.message + '</div>';
+                });
+        }
+
+        function goToPage(page) {
+            if (page < 1 || page > totalPages) return;
+            loadNotes(page);
+        }
+
+        function applyFilters() {
+            loadNotes(1);
+        }
+
+        function resetFilters() {
+            document.getElementById('minConfidence').value = '';
+            document.getElementById('minPrice').value = '';
+            document.getElementById('maxPrice').value = '';
+            document.getElementById('matchLevel').value = 'all';
+            document.getElementById('sourceType').value = 'all';
+            document.getElementById('noteType').value = 'all';
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+            document.getElementById('sortBy').value = 'time';
+            document.getElementById('sortOrder').value = 'desc';
+            loadNotes(1);
+        }
+
+        loadNotes();
+        setInterval(() => loadNotes(currentPage), 30000);
+    </script>
+</body>
+</html>

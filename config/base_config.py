@@ -1,6 +1,6 @@
 # 基础配置
 PLATFORM = "xhs"  # 平台，xhs | zhihu | xhy
-KEYWORDS = "咖啡,美式"  # 关键词搜索配置，以英文逗号分隔
+KEYWORDS = "深圳转租"  # 关键词搜索配置，以英文逗号分隔
 LOGIN_TYPE = "qrcode"  # qrcode or phone or cookie
 COOKIES = ""
 CRAWLER_TYPE = (
@@ -38,7 +38,7 @@ CDP_DEBUG_PORT = 9222
 # 如果为空，系统会自动检测Chrome/Edge的安装路径
 # Windows示例: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
 # macOS示例: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-CUSTOM_BROWSER_PATH = ""
+CUSTOM_BROWSER_PATH = "/usr/bin/brave-browser-stable"
 
 # CDP模式下是否启用无头模式
 # 注意：即使设置为True，某些反检测功能在无头模式下可能效果不佳
@@ -52,7 +52,7 @@ BROWSER_LAUNCH_TIMEOUT = 60
 AUTO_CLOSE_BROWSER = True
 
 # 数据保存类型选项配置,支持五种类型：csv、db、json、sqlite、excel, 最好保存到DB，有排重的功能。
-SAVE_DATA_OPTION = "json"  # csv or db or json or sqlite or excel
+SAVE_DATA_OPTION = "db"  # csv or db or json or sqlite or excel
 
 # 用户浏览器缓存的浏览器文件配置
 USER_DATA_DIR = "%s_user_data_dir"  # %s will be replaced by platform name
@@ -61,7 +61,7 @@ USER_DATA_DIR = "%s_user_data_dir"  # %s will be replaced by platform name
 START_PAGE = 1
 
 # 爬取视频/帖子的数量控制
-CRAWLER_MAX_NOTES_COUNT = 15
+CRAWLER_MAX_NOTES_COUNT = 300
 
 # 并发爬虫数量控制
 MAX_CONCURRENCY_NUM = 1
@@ -70,7 +70,7 @@ MAX_CONCURRENCY_NUM = 1
 ENABLE_GET_MEIDAS = False
 
 # 是否开启爬评论模式, 默认开启爬评论
-ENABLE_GET_COMMENTS = True
+ENABLE_GET_COMMENTS = False
 
 # 爬取一级评论的数量控制(单视频/帖子)
 CRAWLER_MAX_COMMENTS_COUNT_SINGLENOTES = 10
@@ -105,7 +105,15 @@ STOP_WORDS_FILE = "./docs/hit_stopwords.txt"
 FONT_PATH = "./docs/STZHONGS.TTF"
 
 # 爬取间隔时间
-CRAWLER_MAX_SLEEP_SEC = 2
+CRAWLER_MAX_SLEEP_SEC = 30
+
+# 定时运行间隔（秒）
+SCHEDULE_INTERVAL_SEC = 3600
+
+# 定时运行禁跑时间段，支持多个区间，使用英文逗号分隔
+# 格式: "HH:MM-HH:MM,HH:MM-HH:MM"
+# 示例: "23:00-06:00,12:30-13:30"
+SCHEDULE_SKIP_TIME_RANGES = "01:00-12:00"
 
 from .xhs_config import *
 from .zhihu_config import *

@@ -61,6 +61,9 @@ python main.py
 # 指定平台和爬虫类型
 python main.py --platform xhs --type search
 
+# 定时模式 + 禁跑时段（例如夜间和午间不运行）
+python main.py --schedule --schedule_skip_time_ranges "23:00-06:00,12:30-13:30"
+
 # 初始化数据库
 python main.py --init-db sqlite
 ```

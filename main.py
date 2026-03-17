@@ -11,6 +11,7 @@ if sys.stderr and hasattr(sys.stderr, 'buffer'):
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 import asyncio
+from datetime import datetime
 from typing import Optional, Type
 
 from src.core import arg as cmd
@@ -41,6 +42,82 @@ class CrawlerFactory:
 crawler: Optional[AbstractCrawler] = None
 
 
+def _parse_hhmm(value: str) -> int:
+    value = value.strip()
+    try:
+        hour_str, minute_str = value.split(":")
+        hour = int(hour_str)
+        minute = int(minute_str)
+    except ValueError as exc:
+        raise ValueError(f"Invalid time format: {value!r}, expected HH:MM") from exc
+
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError(f"Invalid time value: {value!r}, expected HH:MM within 00:00-23:59")
+
+    return hour * 60 + minute
+
+
+def _parse_skip_ranges(ranges_text: str) -> list[tuple[int, int]]:
+    if not ranges_text or not ranges_text.strip():
+        return []
+
+    ranges: list[tuple[int, int]] = []
+    for raw_item in ranges_text.split(","):
+        item = raw_item.strip()
+        if not item:
+            continue
+        if "-" not in item:
+            raise ValueError(f"Invalid range: {item!r}, expected HH:MM-HH:MM")
+
+        start_text, end_text = item.split("-", 1)
+        start_min = _parse_hhmm(start_text)
+        end_min = _parse_hhmm(end_text)
+        if start_min == end_min:
+            raise ValueError(f"Invalid range: {item!r}, start and end cannot be the same")
+
+        ranges.append((start_min, end_min))
+
+    return ranges
+
+
+def _seconds_until_allowed(ranges: list[tuple[int, int]], now: datetime) -> int:
+    now_min = now.hour * 60 + now.minute
+    now_sec = now.second
+    waits: list[int] = []
+
+    for start_min, end_min in ranges:
+        if start_min < end_min:
+            in_range = start_min <= now_min < end_min
+            if not in_range:
+                continue
+            wait = (end_min - now_min) * 60 - now_sec
+        else:
+            in_range = now_min >= start_min or now_min < end_min
+            if not in_range:
+                continue
+            if now_min >= start_min:
+                wait = ((24 * 60 - now_min) + end_min) * 60 - now_sec
+            else:
+                wait = (end_min - now_min) * 60 - now_sec
+
+        waits.append(max(wait, 1))
+
+    return min(waits) if waits else 0
+
+
+async def _run_crawler_once() -> None:
+    global crawler
+
+    crawler = CrawlerFactory.create_crawler(platform=config.PLATFORM)
+    await crawler.start()
+
+    _flush_excel_if_needed()
+
+    # Generate wordcloud after crawling is complete
+    # Only for JSON save mode
+    await _generate_wordcloud_if_needed()
+
+
 def _flush_excel_if_needed() -> None:
     if config.SAVE_DATA_OPTION != "excel":
         return
@@ -52,6 +129,32 @@ def _flush_excel_if_needed() -> None:
         print("[Main] Excel files saved successfully")
     except Exception as e:
         print(f"[Main] Error flushing Excel data: {e}")
+
+
+async def _run_scheduled_crawler() -> None:
+    skip_ranges = _parse_skip_ranges(config.SCHEDULE_SKIP_TIME_RANGES)
+    if skip_ranges:
+        print(f"[Main] Schedule skip ranges enabled: {config.SCHEDULE_SKIP_TIME_RANGES}")
+
+    while True:
+        now = datetime.now()
+        wait_seconds = _seconds_until_allowed(skip_ranges, now)
+        if wait_seconds > 0:
+            print(
+                f"[Main] Current time {now.strftime('%H:%M:%S')} is in skip ranges, "
+                f"sleeping {wait_seconds} seconds"
+            )
+            await asyncio.sleep(wait_seconds)
+            continue
+
+        print(f"[Main] Scheduled crawl started, next interval: {config.SCHEDULE_INTERVAL_SEC} seconds")
+        try:
+            await _run_crawler_once()
+        finally:
+            await async_cleanup()
+
+        print(f"[Main] Scheduled crawl finished, sleeping {config.SCHEDULE_INTERVAL_SEC} seconds")
+        await asyncio.sleep(config.SCHEDULE_INTERVAL_SEC)
 
 
 async def _generate_wordcloud_if_needed() -> None:
@@ -69,22 +172,22 @@ async def _generate_wordcloud_if_needed() -> None:
 
 
 async def main() -> None:
-    global crawler
-
     args = await cmd.parse_cmd()
+    try:
+        _parse_skip_ranges(args.schedule_skip_time_ranges)
+    except ValueError as exc:
+        raise SystemExit(f"[Main] Invalid --schedule_skip_time_ranges: {exc}") from exc
+
     if args.init_db:
         await db.init_db(args.init_db)
         print(f"Database {args.init_db} initialized successfully.")
         return
 
-    crawler = CrawlerFactory.create_crawler(platform=config.PLATFORM)
-    await crawler.start()
+    if args.schedule:
+        await _run_scheduled_crawler()
+        return
 
-    _flush_excel_if_needed()
-
-    # Generate wordcloud after crawling is complete
-    # Only for JSON save mode
-    await _generate_wordcloud_if_needed()
+    await _run_crawler_once()
 
 
 async def async_cleanup() -> None:
@@ -105,6 +208,8 @@ async def async_cleanup() -> None:
                 error_msg = str(e).lower()
                 if "closed" not in error_msg and "disconnected" not in error_msg:
                     print(f"[Main] Error closing browser context: {e}")
+
+        crawler = None
 
     if config.SAVE_DATA_OPTION in ("db", "sqlite"):
         await db.close()

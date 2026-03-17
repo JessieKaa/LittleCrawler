@@ -215,3 +215,7 @@ data/
 .cache/
 .codacy/
 
+.specstory/
+llm_processor/state.json
+llm_processor/logs/
+llm_processor/sent_notes.json
